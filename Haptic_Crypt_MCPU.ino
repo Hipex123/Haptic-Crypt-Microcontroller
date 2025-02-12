@@ -7,6 +7,8 @@
 #include <bitset>
 #include <sstream>
 #include <cstddef>
+#include "stdlib.h"
+#include "mbedtls/md.h"
 #include "SPIFFS.h"
 
 using std::vector;
@@ -56,6 +58,33 @@ vector<const char*> friends = {"usr0"};
 vector<const char*> ips = {"localhost"};
 vector<int> ports = {30000};
 std::map<const char*, const char*> wifis = {{"XXXX", "XXXX"}};
+
+string hashHex(vector<uint8_t> data) {
+  string res = "";
+  
+  for (int i = 0; i < data.size(); i++) {
+    char buf[5];
+    snprintf(buf, sizeof(buf), "%02X", data[i]);
+    res += buf;
+  }
+  return res;
+}
+
+vector<uint8_t> generateSHA256(const string& text) {
+  std::vector<uint8_t> hash(32);
+
+  mbedtls_md_context_t ctx;
+  mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
+
+  mbedtls_md_init(&ctx);
+  mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(md_type), 0);
+  mbedtls_md_starts(&ctx);
+  mbedtls_md_update(&ctx, (const unsigned char*)text.c_str(), text.length());
+  mbedtls_md_finish(&ctx, hash.data());
+  mbedtls_md_free(&ctx);
+
+  return hash;
+}
 
 string stringSlice(string s, int off, int keep) {
   return string(s.begin() + off, s.begin() + std::min(keep, static_cast<int>(s.size())));
@@ -206,6 +235,7 @@ vector<string> encode(string plain) {
 WiFiClient client;
 
 uint8_t fingers[4] = {0, 0, 0, 0};
+string id;
 string charBuffer = "";
 string clientBuffer = "";
 string receiver = "";
@@ -216,6 +246,7 @@ auto pointerStart = std::chrono::high_resolution_clock::now();
 auto pointerStop = std::chrono::high_resolution_clock::now();
 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(pointerStop - pointerStart);
 bool pointerTimerStart = false;
+
 
 void fingerCheck();
 void combine(uint8_t comb[4]);
@@ -232,13 +263,15 @@ std::map<const char, const char*> dict = {
 };
 
 std::map<const char*, int> nums = {
-  {"f", 0}, {"o", 1}, {"th", 2}, {"f", 4}, {"fi", 5},
+  {"z", 0}, {"o", 1}, {"th", 2}, {"f", 4}, {"fi", 5},
   {"s", 6}, {"se", 7}, {"e", 8}, {"n", 9}
 };
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
+
+  id = hashHex(generateSHA256(string(String((uint32_t)ESP.getEfuseMac(), HEX).c_str())));
 
   if(!SPIFFS.begin(true)){
     Serial.println("An Error has occurred while mounting SPIFFS");
@@ -272,6 +305,8 @@ void setup() {
     Serial.println("Connected");  
   }
   Serial.println("Connected to Wi-Fi!");
+
+  Serial.println(id.c_str());
 }
 
 void loop() {
@@ -295,7 +330,7 @@ void loop() {
           }
           Serial.printf("%s\n", charBuffer.c_str());
           Serial.printf("%s\n", clientBuffer.c_str());
-          client.printf("%s", (clientBuffer+'|'+receiver).c_str());
+          client.printf("%s", (clientBuffer+'|'+receiver+'|'+id).c_str());
           charBuffer = "";
           clientBuffer = "";
           break;
