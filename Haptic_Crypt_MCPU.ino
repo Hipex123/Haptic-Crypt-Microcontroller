@@ -57,7 +57,7 @@ std::map<string, string> tableO = {
 vector<const char*> friends = {"usr0"};
 vector<const char*> ips = {"localhost"};
 vector<int> ports = {30000};
-std::map<const char*, const char*> wifis = {{"XXXX", "XXXX"}};
+std::map<const char*, const char*> wifis = {{"XXX", "XXXX"}};
 
 string hashHex(vector<uint8_t> data) {
   string res = "";
@@ -235,10 +235,10 @@ vector<string> encode(string plain) {
 WiFiClient client;
 
 uint8_t fingers[4] = {0, 0, 0, 0};
-string id;
+string id = "";
 string charBuffer = "";
 string clientBuffer = "";
-string receiver = "";
+string receiver = friends[0];
 bool isHeld[4] = {false, false, false, false};
 
 uint16_t pointerTimer = 3000;
@@ -305,6 +305,14 @@ void setup() {
     Serial.println("Connected");  
   }
   Serial.println("Connected to Wi-Fi!");
+
+
+  if (client.connect(ips[0], ports[0])) {
+    Serial.println("Connected to TCP server!");
+  }
+  else {
+    Serial.println("Connection to server failed.");
+  }
 
   Serial.println(id.c_str());
 }
