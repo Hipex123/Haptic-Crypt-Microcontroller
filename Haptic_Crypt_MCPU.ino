@@ -7,6 +7,8 @@
 #include <bitset>
 #include <sstream>
 #include <cstddef>
+#include "stdlib.h"
+#include "mbedtls/md.h"
 #include "SPIFFS.h"
 
 using std::vector;
@@ -51,6 +53,38 @@ std::map<string, string> tableO = {
   {"8", "11101"},
   {"9", "11111"}
 };
+
+vector<const char*> friends = {"usr0"};
+vector<const char*> ips = {"localhost"};
+vector<int> ports = {30000};
+std::map<const char*, const char*> wifis = {{"XXX", "XXXX"}};
+
+string hashHex(vector<uint8_t> data) {
+  string res = "";
+  
+  for (int i = 0; i < data.size(); i++) {
+    char buf[5];
+    snprintf(buf, sizeof(buf), "%02X", data[i]);
+    res += buf;
+  }
+  return res;
+}
+
+vector<uint8_t> generateSHA256(const string& text) {
+  std::vector<uint8_t> hash(32);
+
+  mbedtls_md_context_t ctx;
+  mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
+
+  mbedtls_md_init(&ctx);
+  mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(md_type), 0);
+  mbedtls_md_starts(&ctx);
+  mbedtls_md_update(&ctx, (const unsigned char*)text.c_str(), text.length());
+  mbedtls_md_finish(&ctx, hash.data());
+  mbedtls_md_free(&ctx);
+
+  return hash;
+}
 
 string stringSlice(string s, int off, int keep) {
   return string(s.begin() + off, s.begin() + std::min(keep, static_cast<int>(s.size())));
@@ -162,7 +196,6 @@ string joinVector(vector<string> vec) {
 } 
 
 vector<string> encode(string plain) {
-  ostringstream oss;
   vector<string> str50T = {};
   str50T.reserve(plain.size());
   
@@ -190,8 +223,7 @@ vector<string> encode(string plain) {
   vector<string> inputFNn = divideBinary(10, inputFOc);
 
   vector<string> inputFDc = findInListFlash(inputFNn);
-  
-  string encStr = sr50.size() >= 10 ? string(sr50.end() - 10, sr50.end()) : sr50;
+  string encStr = sr50.size() >= 10 ? string(sr50.end() - 10, sr50.end()) : string(10 - sr50.size(), ' ') + sr50;
   string encHt = string(str50T.back().begin() + 1, str50T.back().end());
   
   inputFDc.push_back(encHt);
@@ -200,17 +232,13 @@ vector<string> encode(string plain) {
   return inputFDc;
 }
 
-const char* ssid = "XXXX";
-const char* password = "XXXX";
-
-const char* serverIP = "XXXX";
-const int serverPort = XXXX;
-
 WiFiClient client;
 
 uint8_t fingers[4] = {0, 0, 0, 0};
-std::string charBuffer = "";
-std::string clientBuffer = "";
+string id = "";
+string charBuffer = "";
+string clientBuffer = "";
+string receiver = friends[0];
 bool isHeld[4] = {false, false, false, false};
 
 uint16_t pointerTimer = 3000;
@@ -219,11 +247,13 @@ auto pointerStop = std::chrono::high_resolution_clock::now();
 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(pointerStop - pointerStart);
 bool pointerTimerStart = false;
 
+
 void fingerCheck();
 void combine(uint8_t comb[4]);
+uint8_t numberCheck();
 void clearInputs();
 
-std::map<char, std::string> dict = {
+std::map<const char, const char*> dict = {
   {'a', "001"}, {'b', "010"}, {'c', "100"}, {'d', "101"}, {'e', "110"},
   {'f', "111"}, {'g', "011"}, {'h', "002"}, {'i', "020"}, {'j', "200"},
   {'k', "201"}, {'l', "210"}, {'m', "211"}, {'n', "112"}, {'o', "121"},
@@ -232,9 +262,16 @@ std::map<char, std::string> dict = {
   {'z', "400"}
 };
 
+std::map<const char*, int> nums = {
+  {"z", 0}, {"o", 1}, {"th", 2}, {"f", 4}, {"fi", 5},
+  {"s", 6}, {"se", 7}, {"e", 8}, {"n", 9}
+};
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
+
+  id = hashHex(generateSHA256(string(String((uint32_t)ESP.getEfuseMac(), HEX).c_str())));
 
   if(!SPIFFS.begin(true)){
     Serial.println("An Error has occurred while mounting SPIFFS");
@@ -248,22 +285,36 @@ void setup() {
   }
 
   Serial.print("Connecting to WiFi");
-  WiFi.begin(ssid, password);
 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.print(".");
+  for (const auto [ssid, passwd] : wifis) {
+    WiFi.disconnect(true);
+    delay(2000);
+    WiFi.begin(ssid, passwd);
+
+    auto startTime = std::chrono::high_resolution_clock::now();
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(1000);
+      Serial.print(".");
+      auto endTime = std::chrono::high_resolution_clock::now();
+      if (std::chrono::duration_cast<std::chrono::milliseconds>(endTime-startTime).count() > 5000) {
+        break;  
+      }
+    }
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("Connected");  
   }
   Serial.println("Connected to Wi-Fi!");
 
-  Serial.println("Connecting to server...");
 
-  if (client.connect(serverIP, serverPort)) {
+  if (client.connect(ips[0], ports[0])) {
     Serial.println("Connected to TCP server!");
   }
   else {
     Serial.println("Connection to server failed.");
   }
+
+  Serial.println(id.c_str());
 }
 
 void loop() {
@@ -285,9 +336,27 @@ void loop() {
           {
             clientBuffer += s + ", ";
           }
-          client.printf("%s", clientBuffer.c_str());
+          Serial.printf("%s\n", charBuffer.c_str());
+          Serial.printf("%s\n", clientBuffer.c_str());
+          client.printf("%s", (clientBuffer+'|'+receiver+'|'+id).c_str());
           charBuffer = "";
           clientBuffer = "";
+          break;
+        case 4:
+          receiver = friends[numberCheck()];
+          break;
+        case 5:
+          client.stop();
+          delay(1000);
+
+          Serial.println("Connecting to server...");
+
+          if (client.connect(ips[numberCheck()], ports[numberCheck()])) {
+            Serial.println("Connected to TCP server!");
+          }
+          else {
+            Serial.println("Connection to server failed.");
+          }
           break;
         default:
           Serial.println("Not valid choice");
@@ -298,17 +367,39 @@ void loop() {
     }
   }
   else {
-    Serial.println("Disconnected from server. Reconnecting...");
+    fingerCheck();
+    uint8_t serverData;
 
-    if (client.connect(serverIP, serverPort)) {
-      Serial.println("Reconnected to server!");
+    pointerStop = pointerTimerStart ? std::chrono::high_resolution_clock::now() : pointerStart;
+    duration = std::chrono::duration_cast<std::chrono::milliseconds>(pointerStop - pointerStart);
+    if (duration.count() >= pointerTimer) {
+      switch(fingers[3]) {
+        case 4:
+          receiver = friends[numberCheck()];
+          break;
+        case 5:
+          client.stop();
+          delay(1000);
+
+          Serial.println("Connecting to server...NON");
+          
+          serverData = numberCheck();
+          Serial.println(serverData);
+          if (client.connect(ips[serverData], ports[serverData])) {
+            Serial.println("Connected to TCP server!");
+          }
+          else {
+            Serial.println("Connection to server failed.");
+          }
+          break;
+        default:
+          Serial.println("Not valid choice");
+          break;
+      }
+      charBuffer = "";
+      clearInputs();
+      pointerTimerStart = false;
     }
-  }
-
-  if (client.available()) {
-    String serverResponse = client.readStringUntil('\n');
-    Serial.print("Server says: ");
-    Serial.println(serverResponse);
   }
 }
 
@@ -321,6 +412,7 @@ void combine(uint8_t comb[4]) {
   for (auto const [key, val] : dict) {
     if (temp == val) {
       charBuffer += key;
+      break;
     }
   }
 }
@@ -342,6 +434,16 @@ void fingerCheck() {
       isHeld[i] = false;
     }
   }
+}
+
+uint8_t numberCheck() {
+  combine(fingers);
+  for (auto const [key, val] : nums) {
+    if (key == charBuffer) {
+      return val;
+    }
+  }
+  return -1;
 }
 
 void clearInputs() {
