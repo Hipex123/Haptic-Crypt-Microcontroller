@@ -57,7 +57,7 @@ std::map<string, string> tableO = {
 vector<const char*> friends = {"usr0"};
 vector<const char*> ips = {"localhost"};
 vector<int> ports = {30000};
-std::map<const char*, const char*> wifis = {{"XXX", "XXXX"}};
+std::map<const char*, const char*> wifis = {{"XXXX", "XXXX"}};
 
 string hashHex(vector<uint8_t> data) {
   string res = "";
@@ -241,7 +241,7 @@ string clientBuffer = "";
 string receiver = friends[0];
 bool isHeld[4] = {false, false, false, false};
 
-uint16_t pointerTimer = 3000;
+uint16_t pointerTimer = 1000;
 auto pointerStart = std::chrono::high_resolution_clock::now();
 auto pointerStop = std::chrono::high_resolution_clock::now();
 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(pointerStop - pointerStart);
@@ -259,11 +259,11 @@ std::map<const char, const char*> dict = {
   {'k', "201"}, {'l', "210"}, {'m', "211"}, {'n', "112"}, {'o', "121"},
   {'p', "022"}, {'q', "220"}, {'r', "202"}, {'s', "003"}, {'t', "030"},
   {'u', "300"}, {'v', "301"}, {'w', "310"}, {'x', "004"}, {'y', "040"},
-  {'z', "400"}
+  {'z', "400"}, {'_', "500"}
 };
 
 std::map<const char*, int> nums = {
-  {"z", 0}, {"o", 1}, {"th", 2}, {"f", 4}, {"fi", 5},
+  {"z", 0}, {"o", 1}, {"t", 2}, {"th", 3}, {"f", 4}, {"fi", 5},
   {"s", 6}, {"se", 7}, {"e", 8}, {"n", 9}
 };
 
@@ -323,6 +323,7 @@ void loop() {
 
     pointerStop = pointerTimerStart ? std::chrono::high_resolution_clock::now() : pointerStart;
     duration = std::chrono::duration_cast<std::chrono::milliseconds>(pointerStop - pointerStart);
+    
     if (duration.count() >= pointerTimer) {
       switch (fingers[3]) {
         case 1:
@@ -411,6 +412,10 @@ void combine(uint8_t comb[4]) {
   }
   for (auto const [key, val] : dict) {
     if (temp == val) {
+      if (key == '_') {
+        charBuffer.pop_back();
+        break;  
+      }
       charBuffer += key;
       break;
     }
@@ -418,15 +423,16 @@ void combine(uint8_t comb[4]) {
 }
 
 void fingerCheck() {
-  uint8_t touch[4] = {T9, T7, T4, T0};
+  uint8_t touch[4] = {T9, T7, T3, T0};
 
   for (uint8_t i = 0; i < 4; i++) {
-    if (touchRead(touch[i]) < 50 && !isHeld[i]) {
+    if (touchRead(touch[i]) < 30 && !isHeld[i]) {
       if (i == 3) {
         if (fingers[3] == 0) {pointerStart = std::chrono::high_resolution_clock::now();}
         pointerTimerStart = true;
         Serial.println("Timer started");
       }
+      Serial.printf("Finger %i pressed\n", i+1);
       fingers[i] += 1;
       isHeld[i] = true;
     }
